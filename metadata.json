@@ -1,0 +1,6 @@
+{
+  "name": "Exora Prime FX",
+  "description": "Exora Prime FX Forex & CFD broker web platform with Personal Area, real-time WebTrader, account restoration, residential address KYC verification, and full administration portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

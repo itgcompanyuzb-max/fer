@@ -1,11 +1,34 @@
-<div align="center">
+# Exora — Crypto Trading Platform
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Modern crypto trading studio with high-frequency analytics, portfolio management, liquid-glass UI, and secure authentication (Google OAuth & Email OTP verification).
 
-  <h1>Built with AI Studio</h2>
+## Features
+- **Real-Time Crypto Market**: Live price feeds, order books, and depth charts.
+- **Liquid-Glass UI**: Dark aesthetic built with Tailwind CSS and Motion.
+- **Authentication**:
+  - Google One Tap / OAuth 2.0
+  - Secure Email OTP verification (Gmail SMTP / Resend)
+  - Demo password & recovery flows
+- **Portfolio & Trading Engine**: Instant buy/sell simulation, asset distribution, balance tracking.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Getting Started
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+### Prerequisites
+- Node.js 18+
+- npm or bun
 
-</div>
+### Installation
+```bash
+npm install
+```
+
+### Development
+```bash
+npm run dev
+```
+Open `http://localhost:3000` to view the application.
+
+### Build
+```bash
+npm run build
+```

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Authenticating with Google — Exora</title>
+  </head>
+  <body style="background:#191c18;color:#f4f7f2;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+    <div style="text-align:center;padding:24px;border-radius:24px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);max-width:360px;width:90%;">
+      <div style="font-size:32px;margin-bottom:12px;">🔐</div>
+      <h3 style="margin:0 0 8px;font-size:18px;">Google Authentication</h3>
+      <p id="status" style="margin:0;font-size:13px;color:#9ca3af;">Verifying credentials, please wait...</p>
+    </div>
+    <script>
+      (async function() {
+        const statusEl = document.getElementById('status');
+        try {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const queryParams = new URLSearchParams(window.location.search);
+          
+          const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
+          const error = hashParams.get('error') || queryParams.get('error');
+
+          if (error) {
+            statusEl.innerText = 'Authentication error: ' + error;
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error }, '*');
+            }
+            setTimeout(() => window.close(), 1500);
+            return;
+          }
+
+          if (accessToken) {
+            statusEl.innerText = 'Fetching user profile...';
+            const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+              headers: { Authorization: 'Bearer ' + accessToken }
+            });
+            
+            if (!res.ok) {
+              throw new Error('Failed to fetch user info from Google');
+            }
+            
+            const profile = await res.json();
+            
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'OAUTH_AUTH_SUCCESS',
+                provider: 'google',
+                user: {
+                  id: profile.sub,
+                  email: profile.email,
+                  name: profile.name || profile.email.split('@')[0],
+                  picture: profile.picture || ''
+                },
+                accessToken: accessToken
+              }, '*');
+              statusEl.innerText = 'Success! Closing window...';
+              setTimeout(() => window.close(), 300);
+            } else {
+              // If opened directly, save to localStorage and redirect
+              try {
+                const session = {
+                  access_token: accessToken,
+                  user: {
+                    id: profile.sub,
+                    email: profile.email,
+                    user_metadata: {
+                      display_name: profile.name || profile.email.split('@')[0],
+                      avatar_url: profile.picture || '',
+                      provider: 'google'
+                    }
+                  }
+                };
+                localStorage.setItem('exora_demo_session', JSON.stringify(session));
+              } catch (e) {}
+              window.location.href = '/';
+            }
+          } else {
+            statusEl.innerText = 'Ready. Please log in through the main window.';
+            setTimeout(() => window.close(), 1500);
+          }
+        } catch (e) {
+          console.error(e);
+          statusEl.innerText = 'Authentication completed with errors: ' + (e.message || e);
+          setTimeout(() => window.close(), 2000);
+        }
+      })();
+    </script>
+  </body>
+</html>
