@@ -28,6 +28,8 @@ export const INITIAL_SYMBOLS: ForexSymbolRate[] = [
   { symbol: 'XAU/USD', name: 'Gold / US Dollar', category: 'commodities', bid: 2685.40, ask: 2685.75, spread: 3.5, change24h: 1.15, high24h: 2698.00, low24h: 2670.50, digitPrecision: 2 },
   { symbol: 'BTC/USD', name: 'Bitcoin / US Dollar', category: 'crypto', bid: 79719.47, ask: 79729.47, spread: 10.0, change24h: -0.01, high24h: 79737.27, low24h: 79714.65, digitPrecision: 2 },
   { symbol: 'US30', name: 'Wall Street 30 Index', category: 'indices', bid: 43810.0, ask: 43812.5, spread: 2.5, change24h: 0.35, high24h: 44050.0, low24h: 43620.0, digitPrecision: 1 },
+  { symbol: 'SOL', name: 'Solana vs US Dollar', category: 'crypto', bid: 154.20, ask: 154.35, spread: 1.5, change24h: 2.45, high24h: 158.00, low24h: 150.00, digitPrecision: 2 },
+  { symbol: 'XAG/USD', name: 'Silver / US Dollar', category: 'commodities', bid: 31.85, ask: 31.88, spread: 3.0, change24h: 0.65, high24h: 32.20, low24h: 31.40, digitPrecision: 2 },
 ];
 
 export const DEFAULT_ECONOMIC_EVENTS: EconomicEvent[] = [
@@ -1392,6 +1394,62 @@ class BrokerStoreManager {
       sym.spread = newSpread;
       setStored('symbols', this.symbols);
       this.addAuditLog(this.activeUser.id, this.activeUser.email, this.activeUser.role, 'UPDATE_SPREAD', 'settings', symbol, `Adjusted ${symbol} spread to ${newSpread} pips`);
+      this.notify();
+    }
+  }
+
+  updateLiveSymbolRate(symbol: string, data: { bid: number; ask: number; high24h?: number; low24h?: number; change24h?: number }): void {
+    this.updateBatchLiveRates([{ symbol, ...data }]);
+  }
+
+  updateBatchLiveRates(items: Array<{ symbol: string; bid: number; ask: number; high24h?: number; low24h?: number; change24h?: number }>): void {
+    let hasChanged = false;
+    items.forEach((item) => {
+      const symIndex = this.symbols.findIndex((s) => 
+        s.symbol === item.symbol || 
+        s.symbol.replace(/[\/_]/g, '') === item.symbol.replace(/[\/_]/g, '')
+      );
+      if (symIndex !== -1) {
+        const sym = this.symbols[symIndex];
+        this.symbols[symIndex] = {
+          ...sym,
+          bid: item.bid,
+          ask: item.ask,
+          high24h: item.high24h !== undefined ? item.high24h : Math.max(sym.high24h, item.ask),
+          low24h: item.low24h !== undefined ? item.low24h : Math.min(sym.low24h, item.bid),
+          change24h: item.change24h !== undefined ? item.change24h : sym.change24h,
+        };
+        hasChanged = true;
+      }
+    });
+
+    if (hasChanged) {
+      // Recalculate open positions P&L for updated symbols
+      this.positions = this.positions.map((pos) => {
+        if (pos.status !== 'open') return pos;
+        const matchingSym = this.symbols.find(s => 
+          s.symbol === pos.symbol || 
+          s.symbol.replace(/[\/_]/g, '') === pos.symbol.replace(/[\/_]/g, '')
+        );
+        if (!matchingSym) return pos;
+
+        const currentPrice = pos.side === 'buy' ? matchingSym.bid : matchingSym.ask;
+        const pointDiff = pos.side === 'buy' ? (currentPrice - pos.openPrice) : (pos.openPrice - currentPrice);
+        
+        let multiplier = 100000;
+        if (pos.symbol.includes('XAU') || pos.symbol.includes('GOLD')) multiplier = 100;
+        if (pos.symbol.includes('BTC') || pos.symbol.includes('ETH') || pos.symbol.includes('SOL') || pos.symbol === 'US30') multiplier = 1;
+
+        const calculatedPnl = Number((pointDiff * pos.lotSize * multiplier + pos.swap + pos.commission).toFixed(2));
+
+        return {
+          ...pos,
+          currentPrice,
+          pnl: calculatedPnl,
+        };
+      });
+
+      this.recalculateAccountsEquity();
       this.notify();
     }
   }

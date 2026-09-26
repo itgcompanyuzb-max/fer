@@ -50,9 +50,14 @@ import {
   Globe2,
   Lock,
   Unlock,
-  Ruler
+  Ruler,
+  Radio,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
+import { TradingViewChart } from "../trading/TradingViewChart";
+import { OrderBookDOM } from "../trading/OrderBookDOM";
+import { liveMarketFeed, LiveMarketStatus } from "../../lib/liveMarketFeed";
 
 interface WebTraderViewProps {
   lang: Language;
@@ -133,8 +138,12 @@ export function WebTraderView({ lang, onOpenDeposit, onReturnToCabinet }: WebTra
 
   // Active Market Tabs (Quick Switcher at top of chart)
   const [openMarketTabs, setOpenMarketTabs] = useState<string[]>([
-    'BTC', 'ETH', 'BTC/USDT', 'XAU/USD', 'EUR/USD', 'GBP/USD'
+    'BTC', 'ETH', 'SOL', 'XAU/USD', 'EUR/USD', 'GBP/USD', 'USD/JPY', 'US30'
   ]);
+
+  // Real-Time Internet Exchange Engine
+  const [chartEngine, setChartEngine] = useState<'tradingview' | 'canvas'>('tradingview');
+  const [liveStatus, setLiveStatus] = useState<LiveMarketStatus>(liveMarketFeed.getStatus());
 
   const [accounts, setAccounts] = useState<TradingAccount[]>(brokerStore.getAccounts());
   const [selectedAccount, setSelectedAccount] = useState<TradingAccount | undefined>(() => {
@@ -176,8 +185,8 @@ export function WebTraderView({ lang, onOpenDeposit, onReturnToCabinet }: WebTra
   const [oneClickTrading, setOneClickTrading] = useState<boolean>(brokerStore.isOneClickTrading());
   const [showOneClickModal, setShowOneClickModal] = useState<boolean>(false);
 
-  // Right Side Panel Tab: 'order' or 'analytics'
-  const [rightPanelTab, setRightPanelTab] = useState<'order' | 'analytics'>('order');
+  // Right Side Panel Tab: 'order', 'dom' (Depth of Market), or 'analytics'
+  const [rightPanelTab, setRightPanelTab] = useState<'order' | 'dom' | 'analytics'>('order');
   const [economicFilter, setEconomicFilter] = useState<'all' | 'high' | 'medium'>('all');
 
   // Bottom Dashboard Tab: 'positions' | 'pending' | 'history'
@@ -225,8 +234,11 @@ export function WebTraderView({ lang, onOpenDeposit, onReturnToCabinet }: WebTra
 
   // When switching symbols, regenerate realistic candles
   useEffect(() => {
+    liveMarketFeed.setActiveSymbol(selectedSymbol.symbol);
+    const unsub = liveMarketFeed.subscribeStatus(setLiveStatus);
     setCandles(generateRealisticCandles(selectedSymbol.bid, selectedSymbol.digitPrecision, 42));
     setTargetLimitPrice(selectedSymbol.bid.toString());
+    return unsub;
   }, [selectedSymbol.symbol]);
 
   // Live real-time tick to update latest candle
@@ -754,123 +766,11 @@ export function WebTraderView({ lang, onOpenDeposit, onReturnToCabinet }: WebTra
       {/* ========================================================================= */}
       {/* 1. TOP HEADER RIBBON: Cabinet Back + Market Tabs + Account + Metrics     */}
       {/* ========================================================================= */}
-      <header className="h-14 border-b border-white/10 bg-[#111613] px-3 flex items-center justify-between gap-3 shrink-0">
-        {/* Left: Brand + Return to Cabinet + Market Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          {/* Back to Cabinet shortcut button */}
-          <button
-            onClick={onReturnToCabinet}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-300 hover:text-white transition-all border border-white/10 shrink-0"
-            title="Shaxsiy Kabinetga qaytish"
-          >
-            <ArrowLeft className="size-3.5 text-primary" />
-            <span className="hidden sm:inline">Kabinet</span>
-          </button>
-
-          {/* Terminal Brand Badge */}
-          <div className="flex items-center gap-2 px-2 shrink-0 border-r border-white/10 pr-3">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-[#b9ef40] text-black font-black flex items-center justify-center text-xs">
-              EX
-            </div>
-            <span className="font-extrabold text-xs tracking-tight text-white hidden md:inline">
-              EXORA <span className="text-primary font-black">TERMINAL</span>
-            </span>
-          </div>
-
-          {/* Active Market Switcher Tabs */}
-          <div className="flex items-center gap-1">
-            {openMarketTabs.map(symName => {
-              const sym = symbols.find(s => s.symbol === symName);
-              if (!sym) return null;
-              const isActive = sym.symbol === selectedSymbol.symbol;
-              const isUp = sym.change24h >= 0;
-
-              return (
-                <div
-                  key={sym.symbol}
-                  onClick={() => handleSelectSymbol(sym)}
-                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-mono cursor-pointer transition-all border shrink-0 ${
-                    isActive
-                      ? 'bg-primary/15 border-primary/40 text-white font-bold'
-                      : 'bg-white/5 border-white/5 text-gray-400 hover:text-gray-200 hover:bg-white/10'
-                  }`}
-                >
-                  <span className="text-[11px] font-bold text-white">{sym.symbol}</span>
-                  <span className={`text-[10px] ${isUp ? 'text-primary' : 'text-rose-400'}`}>
-                    {sym.bid.toFixed(sym.digitPrecision > 2 ? 2 : sym.digitPrecision)}
-                  </span>
-                  {openMarketTabs.length > 1 && (
-                    <button
-                      onClick={(e) => handleCloseTab(sym.symbol, e)}
-                      className="text-gray-500 hover:text-white p-0.5 rounded-sm transition-colors"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Quick Add Symbol Tab */}
-            <div className="relative group">
-              <button
-                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center text-xs border border-white/10"
-                title="Bozor qo'shish"
-              >
-                <Plus className="size-3.5" />
-              </button>
-              <div className="absolute left-0 mt-1 w-44 rounded-xl bg-[#141916] border border-white/10 p-1.5 shadow-2xl hidden group-hover:block z-50">
-                {symbols.map(s => (
-                  <button
-                    key={s.symbol}
-                    onClick={() => handleSelectSymbol(s)}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono text-gray-300 hover:bg-primary/20 hover:text-white flex items-center justify-between"
-                  >
-                    <span>{s.symbol}</span>
-                    <span className="text-[10px] text-gray-400">{s.category}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Account Switcher, Real-time Metrics, Deposit CTA */}
+      <header className="h-14 border-b border-white/10 bg-[#111613] px-3 flex items-center justify-end gap-3 shrink-0">
+        {/* Right: Real-time Metrics, Deposit CTA, Fullscreen Toggle */}
         <div className="flex items-center gap-3 shrink-0">
-          {/* Account Switcher Dropdown */}
-          <div className="relative group">
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-semibold hover:bg-white/10 transition-colors">
-              <span className={`w-2 h-2 rounded-full ${selectedAccount?.isDemo ? 'bg-amber-400' : 'bg-primary'}`} />
-              <span className="font-mono text-white">
-                {selectedAccount?.accountType.toUpperCase()} #{selectedAccount?.accountNumber}
-              </span>
-              <ChevronDown className="size-3 text-gray-400" />
-            </button>
-
-            <div className="absolute right-0 mt-1 w-64 rounded-xl bg-[#141916] border border-white/10 p-2 shadow-2xl hidden group-hover:block z-50">
-              <div className="text-[10px] font-mono uppercase text-gray-400 px-2 py-1">Savdo hisobini tanlang:</div>
-              {accounts.filter(a => !a.isArchived).map(acc => (
-                <button
-                  key={acc.id}
-                  onClick={() => setSelectedAccount(acc)}
-                  className={`w-full text-left p-2 rounded-lg text-xs flex items-center justify-between transition-colors ${
-                    selectedAccount?.id === acc.id ? 'bg-primary/20 text-white font-bold' : 'text-gray-300 hover:bg-white/5'
-                  }`}
-                >
-                  <div>
-                    <div className="font-mono">#{acc.accountNumber} ({acc.accountType})</div>
-                    <div className="text-[10px] text-gray-400">Leverage: 1:{acc.leverage}</div>
-                  </div>
-                  <div className="font-mono text-right">
-                    ${acc.balance.toFixed(2)}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Quick Metrics (Balance, Equity, Free Margin) */}
-          <div className="hidden xl:flex items-center gap-4 text-xs font-mono border-l border-white/10 pl-3">
+          <div className="flex items-center gap-4 text-xs font-mono">
             <div>
               <span className="text-[10px] text-gray-400 block -mb-0.5">Balans:</span>
               <span className="font-bold text-white">${selectedAccount?.balance.toFixed(2)}</span>
@@ -1036,182 +936,201 @@ export function WebTraderView({ lang, onOpenDeposit, onReturnToCabinet }: WebTra
         </aside>
 
         {/* --------------------------------------------------------------------- */}
-        {/* B. CENTER CHART AREA: Sub-header Controls + Interactive Canvas        */}
+        {/* B. CENTER CHART AREA: TradingView Real-Time Chart or Canvas Chart     */}
         {/* --------------------------------------------------------------------- */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#0c100d] relative overflow-hidden">
-          {/* Chart Header Bar: Asset Info + Timeframes + Chart Type + Indicators */}
-          <div className="h-11 border-b border-white/10 px-3 flex items-center justify-between gap-3 bg-[#111613] shrink-0 text-xs">
-            {/* Symbol Title & Live Spread */}
-            <div className="flex items-center gap-3">
-              <span className="font-extrabold text-sm text-white tracking-wide">{selectedSymbol.symbol}</span>
-              <span className="text-[11px] text-gray-400 hidden sm:inline">{selectedSymbol.name}</span>
-              <span className="text-[11px] font-mono text-gray-400 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
-                Spred: <strong className="text-primary">{selectedSymbol.spread}</strong> pips
-              </span>
-            </div>
-
-            {/* Timeframe Selector Buttons */}
-            <div className="flex items-center gap-1 bg-white/5 p-0.5 rounded-lg border border-white/10">
-              {(['1m', '5m', '15m', '1h', '4h', '1D', '1W'] as TimeFrame[]).map(tf => (
-                <button
-                  key={tf}
-                  onClick={() => setTimeframe(tf)}
-                  className={`px-2 py-1 rounded-md text-[11px] font-mono font-bold transition-all ${
-                    timeframe === tf ? 'bg-primary text-black shadow-xs' : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
-
-            {/* Chart Type (Candles, Line, Area) & Indicators Menu */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center bg-white/5 p-0.5 rounded-lg border border-white/10 text-[11px]">
-                <button
-                  onClick={() => setChartMode('candles')}
-                  className={`px-2 py-1 rounded-md font-semibold transition-all ${
-                    chartMode === 'candles' ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  Shamlar
-                </button>
-                <button
-                  onClick={() => setChartMode('line')}
-                  className={`px-2 py-1 rounded-md font-semibold transition-all ${
-                    chartMode === 'line' ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  Chiziq
-                </button>
-                <button
-                  onClick={() => setChartMode('area')}
-                  className={`px-2 py-1 rounded-md font-semibold transition-all ${
-                    chartMode === 'area' ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  Soha
-                </button>
-              </div>
-
-              {/* Indicators Dropdown (FX Menu) */}
-              <div className="relative">
-                <button
-                  onClick={() => setIndicatorsOpen(!indicatorsOpen)}
-                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-bold text-xs flex items-center gap-1 border border-white/10"
-                >
-                  <Activity className="size-3.5 text-primary" />
-                  <span>Indikatorlar</span>
-                </button>
-
-                {indicatorsOpen && (
-                  <div className="absolute right-0 mt-1 w-56 rounded-xl bg-[#141916] border border-white/10 p-3 shadow-2xl z-50 flex flex-col gap-2">
-                    <div className="text-[11px] font-bold text-white border-b border-white/10 pb-1.5">
-                      Texnik Ko'rsatkichlar
-                    </div>
-
-                    <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
-                      <span>SMA 20 (Moving Average)</span>
-                      <input 
-                        type="checkbox" 
-                        checked={showSMA} 
-                        onChange={() => setShowSMA(!showSMA)} 
-                        className="rounded accent-primary"
-                      />
-                    </label>
-
-                    <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
-                      <span>EMA 50 (Exponential)</span>
-                      <input 
-                        type="checkbox" 
-                        checked={showEMA} 
-                        onChange={() => setShowEMA(!showEMA)} 
-                        className="rounded accent-amber-400"
-                      />
-                    </label>
-
-                    <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
-                      <span>Hajmlar (Volume)</span>
-                      <input 
-                        type="checkbox" 
-                        checked={showVolume} 
-                        onChange={() => setShowVolume(!showVolume)} 
-                        className="rounded accent-primary"
-                      />
-                    </label>
-
-                    <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
-                      <span>RSI 14 (Momentum)</span>
-                      <input 
-                        type="checkbox" 
-                        checked={showRSI} 
-                        onChange={() => setShowRSI(!showRSI)} 
-                        className="rounded accent-purple-400"
-                      />
-                    </label>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Interactive HTML5 Canvas Container */}
-          <div ref={containerRef} className="flex-1 relative overflow-hidden bg-[#0a0d0b]">
-            <canvas
-              ref={canvasRef}
-              width={1000}
-              height={500}
-              onClick={handleCanvasClick}
-              onMouseMove={handleCanvasMouseMove}
-              onMouseLeave={() => setMousePos(null)}
-              className="w-full h-full cursor-crosshair block"
+        <main className="flex-1 flex flex-col min-w-0 bg-[#0a0d0b] relative overflow-hidden">
+          {chartEngine === 'tradingview' ? (
+            <TradingViewChart
+              symbol={selectedSymbol.symbol}
+              interval={timeframe}
+              className="flex-1 w-full h-full"
             />
+          ) : (
+            <>
+              {/* Chart Header Bar: Asset Info + Timeframes + Chart Type + Indicators */}
+              <div className="h-11 border-b border-white/10 px-3 flex items-center justify-between gap-3 bg-[#111613] shrink-0 text-xs">
+                {/* Symbol Title & Live Spread */}
+                <div className="flex items-center gap-3">
+                  <span className="font-extrabold text-sm text-white tracking-wide">{selectedSymbol.symbol}</span>
+                  <span className="text-[11px] text-gray-400 hidden sm:inline">{selectedSymbol.name}</span>
+                  <span className="text-[11px] font-mono text-gray-400 bg-white/5 px-2 py-0.5 rounded-md border border-white/5">
+                    Spred: <strong className="text-primary">{selectedSymbol.spread}</strong> pips
+                  </span>
+                </div>
 
-            {/* Quick Price Overlay Top-Left */}
-            <div className="absolute top-3 left-3 bg-[#111613]/90 border border-white/10 backdrop-blur-md rounded-xl p-2.5 text-xs font-mono pointer-events-none flex items-center gap-4">
-              <div>
-                <span className="text-[10px] text-gray-400 block">BID:</span>
-                <span className="font-bold text-white text-sm">{selectedSymbol.bid.toFixed(selectedSymbol.digitPrecision)}</span>
+                {/* Timeframe Selector Buttons */}
+                <div className="flex items-center gap-1 bg-white/5 p-0.5 rounded-lg border border-white/10">
+                  {(['1m', '5m', '15m', '1h', '4h', '1D', '1W'] as TimeFrame[]).map(tf => (
+                    <button
+                      key={tf}
+                      onClick={() => setTimeframe(tf)}
+                      className={`px-2 py-1 rounded-md text-[11px] font-mono font-bold transition-all ${
+                        timeframe === tf ? 'bg-primary text-black shadow-xs' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {tf}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Chart Type (Candles, Line, Area) & Indicators Menu */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center bg-white/5 p-0.5 rounded-lg border border-white/10 text-[11px]">
+                    <button
+                      onClick={() => setChartMode('candles')}
+                      className={`px-2 py-1 rounded-md font-semibold transition-all ${
+                        chartMode === 'candles' ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Shamlar
+                    </button>
+                    <button
+                      onClick={() => setChartMode('line')}
+                      className={`px-2 py-1 rounded-md font-semibold transition-all ${
+                        chartMode === 'line' ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Chiziq
+                    </button>
+                    <button
+                      onClick={() => setChartMode('area')}
+                      className={`px-2 py-1 rounded-md font-semibold transition-all ${
+                        chartMode === 'area' ? 'bg-white/15 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Soha
+                    </button>
+                  </div>
+
+                  {/* Indicators Dropdown (FX Menu) */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setIndicatorsOpen(!indicatorsOpen)}
+                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-bold text-xs flex items-center gap-1 border border-white/10"
+                    >
+                      <Activity className="size-3.5 text-primary" />
+                      <span>Indikatorlar</span>
+                    </button>
+
+                    {indicatorsOpen && (
+                      <div className="absolute right-0 mt-1 w-56 rounded-xl bg-[#141916] border border-white/10 p-3 shadow-2xl z-50 flex flex-col gap-2">
+                        <div className="text-[11px] font-bold text-white border-b border-white/10 pb-1.5">
+                          Texnik Ko'rsatkichlar
+                        </div>
+
+                        <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
+                          <span>SMA 20 (Moving Average)</span>
+                          <input 
+                            type="checkbox" 
+                            checked={showSMA} 
+                            onChange={() => setShowSMA(!showSMA)} 
+                            className="rounded accent-primary"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
+                          <span>EMA 50 (Exponential)</span>
+                          <input 
+                            type="checkbox" 
+                            checked={showEMA} 
+                            onChange={() => setShowEMA(!showEMA)} 
+                            className="rounded accent-amber-400"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
+                          <span>Hajmlar (Volume)</span>
+                          <input 
+                            type="checkbox" 
+                            checked={showVolume} 
+                            onChange={() => setShowVolume(!showVolume)} 
+                            className="rounded accent-primary"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
+                          <span>RSI 14 (Momentum)</span>
+                          <input 
+                            type="checkbox" 
+                            checked={showRSI} 
+                            onChange={() => setShowRSI(!showRSI)} 
+                            className="rounded accent-purple-400"
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="h-6 w-px bg-white/10" />
-              <div>
-                <span className="text-[10px] text-gray-400 block">ASK:</span>
-                <span className="font-bold text-primary text-sm">{selectedSymbol.ask.toFixed(selectedSymbol.digitPrecision)}</span>
+
+              {/* Interactive HTML5 Canvas Container */}
+              <div ref={containerRef} className="flex-1 relative overflow-hidden bg-[#0a0d0b]">
+                <canvas
+                  ref={canvasRef}
+                  width={1000}
+                  height={500}
+                  onClick={handleCanvasClick}
+                  onMouseMove={handleCanvasMouseMove}
+                  onMouseLeave={() => setMousePos(null)}
+                  className="w-full h-full cursor-crosshair block"
+                />
+
+                {/* Quick Price Overlay Top-Left */}
+                <div className="absolute top-3 left-3 bg-[#111613]/90 border border-white/10 backdrop-blur-md rounded-xl p-2.5 text-xs font-mono pointer-events-none flex items-center gap-4">
+                  <div>
+                    <span className="text-[10px] text-gray-400 block">BID:</span>
+                    <span className="font-bold text-white text-sm">{selectedSymbol.bid.toFixed(selectedSymbol.digitPrecision)}</span>
+                  </div>
+                  <div className="h-6 w-px bg-white/10" />
+                  <div>
+                    <span className="text-[10px] text-gray-400 block">ASK:</span>
+                    <span className="font-bold text-primary text-sm">{selectedSymbol.ask.toFixed(selectedSymbol.digitPrecision)}</span>
+                  </div>
+                  <div className="h-6 w-px bg-white/10" />
+                  <div>
+                    <span className="text-[10px] text-gray-400 block">24s O'zgarish:</span>
+                    <span className={`font-bold ${selectedSymbol.change24h >= 0 ? 'text-primary' : 'text-rose-400'}`}>
+                      {selectedSymbol.change24h >= 0 ? '+' : ''}{selectedSymbol.change24h}%
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="h-6 w-px bg-white/10" />
-              <div>
-                <span className="text-[10px] text-gray-400 block">24s O'zgarish:</span>
-                <span className={`font-bold ${selectedSymbol.change24h >= 0 ? 'text-primary' : 'text-rose-400'}`}>
-                  {selectedSymbol.change24h >= 0 ? '+' : ''}{selectedSymbol.change24h}%
-                </span>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </main>
 
         {/* --------------------------------------------------------------------- */}
         {/* C. RIGHT ORDER EXECUTION & ANALYTICS SIDEBAR                          */}
         {/* --------------------------------------------------------------------- */}
         <aside className="w-80 lg:w-96 bg-[#111613] border-l border-white/10 flex flex-col shrink-0">
-          {/* Header Switcher: Order Execution vs Economic Calendar */}
-          <div className="h-11 border-b border-white/10 flex items-center px-3 bg-[#141916] text-xs font-bold">
+          {/* Header Switcher: Order Execution vs Order Book DOM vs Economic Calendar */}
+          <div className="h-11 border-b border-white/10 flex items-center px-2 bg-[#141916] text-xs font-bold gap-1">
             <button
               onClick={() => setRightPanelTab('order')}
-              className={`flex-1 py-1.5 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 rounded-lg transition-all text-center flex items-center justify-center gap-1 text-[11px] ${
                 rightPanelTab === 'order' ? 'bg-primary text-black font-extrabold shadow-xs' : 'text-gray-400 hover:text-white'
               }`}
             >
               <Zap className="size-3.5" />
-              <span>Buyurtma Ijrosi</span>
+              <span>Buyurtma</span>
+            </button>
+            <button
+              onClick={() => setRightPanelTab('dom')}
+              className={`flex-1 py-1.5 rounded-lg transition-all text-center flex items-center justify-center gap-1 text-[11px] ${
+                rightPanelTab === 'dom' ? 'bg-primary text-black font-extrabold shadow-xs' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Layers className="size-3.5" />
+              <span>Order Book</span>
             </button>
             <button
               onClick={() => setRightPanelTab('analytics')}
-              className={`flex-1 py-1.5 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 rounded-lg transition-all text-center flex items-center justify-center gap-1 text-[11px] ${
                 rightPanelTab === 'analytics' ? 'bg-primary text-black font-extrabold shadow-xs' : 'text-gray-400 hover:text-white'
               }`}
             >
               <Calendar className="size-3.5" />
-              <span>Taqvim & Signallar</span>
+              <span>Taqvim</span>
             </button>
           </div>
 
@@ -1438,8 +1357,20 @@ export function WebTraderView({ lang, onOpenDeposit, onReturnToCabinet }: WebTra
                 }
               </button>
             </div>
+          ) : rightPanelTab === 'dom' ? (
+            /* TAB 2: REAL-TIME DEPTH OF MARKET (DOM) & ORDER BOOK */
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <OrderBookDOM
+                selectedSymbol={selectedSymbol}
+                onSelectPrice={(price) => {
+                  setTargetLimitPrice(price.toString());
+                  setOrderExecutionType('limit');
+                  toast.info(`Limit narxi tanlandi: $${price}`);
+                }}
+              />
+            </div>
           ) : (
-            /* TAB 2: ECONOMIC CALENDAR & TRADING SIGNALS */
+            /* TAB 3: ECONOMIC CALENDAR & TRADING SIGNALS */
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
               <div className="flex items-center justify-between pb-2 border-b border-white/10">
                 <span className="text-xs font-extrabold text-white flex items-center gap-1.5">

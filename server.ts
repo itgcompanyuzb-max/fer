@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
@@ -6,6 +7,7 @@ import { Resend } from "resend";
 import nodemailer, { type Transporter } from "nodemailer";
 import dotenv from "dotenv";
 import { brokerRouter } from "./server/brokerApi.js";
+import { initTradingWebSocket } from "./server/tradingWs.js";
 
 dotenv.config();
 
@@ -482,7 +484,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = http.createServer(app);
+  initTradingWebSocket(server);
+
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`Exora server running on http://0.0.0.0:${PORT}`);
   });
 }
